@@ -1,0 +1,20 @@
+{
+  "runbook_dir": "Documentations/runbooks",
+  "alerts": {
+    "outage": {
+      "runbook": "backend-not-responding.md",
+      "see_also": ["host-rebooted.md", "host-asleep.md"]
+    },
+    "worker-stale": {
+      "runbook": "worker-quiet.md",
+      "see_also": ["queue-stalled.md", "traffic-stopped.md", "disk-low.md"]
+    }
+  },
+  "c5_reasons": {
+    "worker_stale": "worker-quiet.md",
+    "drain_stalled": "queue-stalled.md",
+    "parse_oldest_pending": "queue-stalled.md",
+    "disk_low": "disk-low.md",
+    "traffic_low": "traffic-stopped.md"
+  }
+}

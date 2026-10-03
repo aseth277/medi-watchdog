@@ -1,0 +1,68 @@
+# The off-host watchdog workflow (Telemetry TT8).
+#
+# THIS FILE IS INERT IN THE MEDI REPO. It is authored here so it is reviewed
+# and tested with the script; it only runs from its real home, the separate
+# `medi-watchdog` repo, as `.github/workflows/watchdog.yml`. Vendored layout in
+# that repo:
+#
+#   .github/workflows/watchdog.yml   <- this file
+#   watchdog/watchdog.py             <- Tools/watchdog/watchdog.py
+#   watchdog/runbooks.json           <- Tools/watchdog/runbooks.json
+#
+# Trigger: only a `repository_dispatch` of type `watchdog`, sent by the
+# healthchecks.io webhook. There is no schedule, no push and no manual trigger.
+#
+# The script reads and validates the dispatch payload itself; this file holds
+# no payload expression on purpose (script-injection hygiene).
+#
+# Supply-chain guard: the dispatch token (held by healthchecks.io) can push
+# files to the watchdog repo, but not workflow files (that needs the separate
+# Workflows permission, never granted). So before anything runs with the
+# issues token, this workflow checks three things, all written HERE where that
+# token cannot change them:
+#   1. `watchdog/` holds exactly the two pinned files and nothing else;
+#   2. both match the sha256 digests below;
+#   3. the script runs as `python3 -I -B`, so no file beside it (a pushed
+#      `watchdog/json.py`, say) can shadow a standard-library import.
+# The checkout keeps no credentials. Re-pin on every change to either file:
+#   sha256sum watchdog/watchdog.py watchdog/runbooks.json
+name: watchdog
+
+on:
+  repository_dispatch:
+    types: [watchdog]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watchdog
+  cancel-in-progress: false
+  # Keep up to 100 pending runs (FIFO) instead of GitHub's default of one, so
+  # a burst of dispatches never cancels a queued `down`/`up`. Not allowed
+  # with cancel-in-progress: true.
+  queue: max
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Refuse any file under watchdog/ other than the two pinned ones
+        run: |
+          test "$(git ls-files watchdog | LC_ALL=C sort)" = "$(printf 'watchdog/runbooks.json\nwatchdog/watchdog.py')"
+      - name: Verify the vendored files against their pinned digests
+        run: |
+          sha256sum -c - <<'PINS'
+          d1d92deacd74c03afb8bcfb2803d7223d0f11ae63395cbc883bb5b051cb12f76  watchdog/watchdog.py
+          7f24fdd921a54fdaa53d454304ae87c445cfbf53063bda2aef018a79e4c657df  watchdog/runbooks.json
+          PINS
+      - name: Open, update or close the issue
+        env:
+          WATCHDOG_ISSUES_TOKEN: ${{ secrets.WATCHDOG_ISSUES_TOKEN }}
+          WATCHDOG_TARGET_REPO: ${{ vars.WATCHDOG_TARGET_REPO }}
+          WATCHDOG_ASSIGNEES: ${{ vars.WATCHDOG_ASSIGNEES }}
+        run: python3 -I -B watchdog/watchdog.py
